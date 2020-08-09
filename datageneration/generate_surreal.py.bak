@@ -1,0 +1,159 @@
+'''
+Generate meshes (in .OBJ format) with varied shapes and poses based on SMPL model and pose parameters provided by 
+surreal (Learning from Synthetic Humans, cvpr 17) [smpl_data]
+
+Historybased:
+3. 2018 Junjie Cao
+2. 2018 Hui Wang 
+1. Copyright 2015 Matthew Loper, Naureen Mahmood and the Max Planck Gesellschaft.  All rights reserved.
+
+System Requirements:
+====================
+Operating system: OSX, Linux
+
+Python 2.7 Dependencies:
+- Numpy & Scipy  [http://www.scipy.org/scipylib/download.html]
+- Chumpy [https://github.com/mattloper/chumpy]
+'''
+
+import random
+import os
+import json
+import numpy as np
+from smpl.smpl_webuser.serialization import load_model
+
+def smpl2mesh(gender, smplfile, shapefile, posepath, outpath, jasondata, nsample_pose=2, nsample_shape=2):
+    '''
+        generate human mesh from smpl parameters.
+    '''
+    human = load_model(smplfile)
+    human_shape = np.load(shapefile)
+    
+    outcount = 0
+    for root, dirs, files in os.walk(posepath):
+        for name in files:
+            filename = os.path.join(posepath, name)
+            #print(name)
+
+            if not name.startswith('pose_'):
+                continue
+
+            if name.startswith('pose_ung_'):
+                continue
+
+            human_pose = np.load(filename)
+            tmpname = name[0:len(name)-4] + '-pose_'
+            outpredix = tmpname
+
+            poseidx = [int(human_pose.shape[0]*random.random()) for i in xrange(nsample_pose)]
+            shapeidx = [int(human_shape.shape[0]*random.random()) for i in xrange(nsample_shape)]
+
+            for poseid in poseidx:
+                human.pose[:] = human_pose[poseid,:]
+                for shapeid in shapeidx:
+                    human.betas[:] = human_shape[shapeid, :]
+                    outname = str(poseid) + '_shape_' + str(shapeid) + '_' + gender
+                    #outfile = outpredix + outname  + '.obj'
+                    outfile = os.path.join(outpath, outpredix + outname  + '.obj')
+                    #print(outfile)  
+
+                    jasondata['people'].append({  
+                                            'shapepara': human.betas.r.tolist(),
+                                            'posepara': human.pose.r.tolist(),
+                                            'name': tmpname + outname
+                                        })  
+                    print(outcount)
+                    outcount +=1
+                    with open(outfile, 'w') as fp:
+                        for v in human.r:
+                            fp.write('v %f %f %f\n' % (v[1], v[2], v[0]))
+                        for f in human.f + 1:  # Faces are 1-based, not 0-based in obj files
+                            fp.write('f %d %d %d\n' % (f[0], f[1], f[2]))
+    return outcount
+
+
+def test():
+    DATA_ROOT = '../../../data'    
+    outpath = os.path.join(DATA_ROOT, 'spe_data_test/mesh') 
+    if not os.path.exists(outpath):
+        os.makedirs(outpath)
+
+    pose= np.array([
+            1.22162998e+00,   1.17162502e+00,   1.16706634e+00,
+            -1.20581151e-03,   8.60930011e-02,   4.45963144e-02,
+            -1.52801601e-02,  -1.16911056e-02,  -6.02894090e-03,
+            1.62427306e-01,   4.26302850e-02,  -1.55304456e-02,
+            2.58729942e-02,  -2.15941742e-01,  -6.59851432e-02,
+            7.79098943e-02,   1.96353287e-01,   6.44420758e-02,
+            -5.43042570e-02,  -3.45508829e-02,   1.13200583e-02,
+            -5.60734887e-04,   3.21716577e-01,  -2.18840033e-01,
+            -7.61821344e-02,  -3.64610642e-01,   2.97633410e-01,
+            9.65453908e-02,  -5.54007106e-03,   2.83410680e-02,
+            -9.57194716e-02,   9.02515948e-02,   3.31488043e-01,
+            -1.18847653e-01,   2.96623230e-01,  -4.76809204e-01,
+            -1.53382001e-02,   1.72342166e-01,  -1.44332021e-01,
+            -8.10869411e-02,   4.68325168e-02,   1.42248288e-01,
+            -4.60898802e-02,  -4.05981280e-02,   5.28727695e-02,
+            3.20133418e-02,  -5.23784310e-02,   2.41559884e-03,
+            -3.08033824e-01,   2.31431410e-01,   1.62540793e-01,
+            6.28208935e-01,  -1.94355965e-01,   7.23800480e-01,
+            -6.49612308e-01,  -4.07179184e-02,  -1.46422181e-02,
+            4.51475441e-01,   1.59122205e+00,   2.70355493e-01,
+            2.04248756e-01,  -6.33800551e-02,  -5.50178960e-02,
+            -1.00920045e+00,   2.39532292e-01,   3.62904727e-01,
+            -3.38783532e-01,   9.40650925e-02,  -8.44506770e-02,
+            3.55101633e-03,  -2.68924050e-02,   4.93676625e-02],dtype = np.float)
+        
+    beta = np.array([-0.25349993,  0.25009069,  0.21440795,  0.78280628,  0.08625954,
+            0.28128183,  0.06626327, -0.26495767,  0.09009246,  0.06537955 ])
+
+    beta = np.zeros(10)
+    pose = np.zeros(72)
+    
+    human = load_model('./smpl/models/basicModel_f_lbs_10_207_0_v1.0.0.pkl')
+    #pose[0:3]=0.0 # cancel global transformation
+    human.pose[:] = pose
+    human.betas[:] = beta
+
+    outfile = os.path.join(outpath, 'output_generate_surreal.obj')
+    with open(outfile, 'w') as fp:
+        for v in human.r:
+            fp.write('v %f %f %f\n' % (v[1], v[2], v[0]))
+        for f in human.f + 1:  # Faces are 1-based, not 0-based in obj files
+            fp.write('f %d %d %d\n' % (f[0], f[1], f[2]))
+
+if __name__ == '__main__':
+    test()
+
+    DATA_ROOT = '/media/jack/data/' #'../../../data' # /Users/jjcao/data/
+    posepath = os.path.join(DATA_ROOT, 'smpl_data_test')
+    # 2,667 (1261 pose_* + 1406 pose_ung_*) pose sequence files, each contains a series of continue poses 
+    # 
+    #posepath = os.path.join(DATA_ROOT, 'smpl_data') 
+
+    nsample_pose, nsample_shape = 1, 1
+    outpath = os.path.join(DATA_ROOT, 'spe_data/mesh') #spe_data_train_11348, spe_data_val_1260
+    if not os.path.exists(outpath):
+        os.makedirs(outpath)
+
+    data = {}  
+    data['count_resample']=1500
+    data['info'] = []
+    data['people'] = []  
+    data['info'].append({'gender': 'female',
+                        'smpl':  './smpl/models/basicModel_f_lbs_10_207_0_v1.0.0.pkl',
+                    'shape': os.path.join(posepath, 'femaleshapes.npy'),
+                    })
+    data['info'].append({'gender': 'male',
+                        'smpl':  './smpl/models/basicmodel_m_lbs_10_207_0_v1.0.0.pkl',
+                    'shape': os.path.join(posepath, 'maleshapes.npy'),
+                    })
+
+    info = data['info']
+
+    for val in info:
+        outcount = smpl2mesh(val['gender'], val['smpl'], val['shape'], posepath, outpath, data, nsample_pose, nsample_shape) 
+        val['count'] = outcount
+
+    with open(os.path.join(DATA_ROOT, 'spe_data/data.json'), 'w') as outfile:  
+        json.dump(data, outfile)
